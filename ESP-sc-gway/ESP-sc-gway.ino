@@ -28,6 +28,7 @@
 #include <cstring>
 #include <SPI.h>
 #include <Time.h>								// http://playground.arduino.cc/code/time
+#include <TimeLib.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
@@ -48,6 +49,7 @@ byte currentMode = 0x81;
 char message[256];
 char b64[256];
 bool sx1272 = true;								// Actually we use sx1276/RFM95
+byte modemstat;
 byte receivedbytes;
 
 uint32_t cp_nb_rx_rcv;
@@ -139,6 +141,7 @@ ESP8266WebServer server(SERVERPORT);
 #define REG_MODEM_CONFIG            0x1D
 #define REG_MODEM_CONFIG2           0x1E
 #define REG_MODEM_CONFIG3           0x26
+#define REG_MODEM_STAT              0x18
 #define REG_SYMB_TIMEOUT_LSB  		0x1F
 #define REG_PKT_SNR_VALUE			0x19
 #define REG_PAYLOAD_LENGTH          0x22
@@ -543,7 +546,8 @@ bool receivePkt(char *payload)
     writeRegister(REG_IRQ_FLAGS, 0x40);
 
     int irqflags = readRegister(REG_IRQ_FLAGS);
-
+    modemstat = readRegister(REG_MODEM_STAT);
+    
     cp_nb_rx_rcv++;											// Receive statistics counter
 
     //  payload crc: 0x20
@@ -849,8 +853,28 @@ int receivepacket(char *buff_up) {
             }
             memcpy((void *)(buff_up + buff_index), (void *)"BW125\"", 6);
             buff_index += 6;
-            memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"4/5\"", 13);
-            buff_index += 13;
+            switch((int)((modemstat & 0xE0) >> 5)) {
+            case 1:
+                memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"4/5\"", 13);
+                buff_index += 13;
+                break;
+            case 2:
+                memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"4/6\"", 13);
+                buff_index += 13;
+                break;
+            case 3:
+                memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"4/7\"", 13);
+                buff_index += 13;
+                break;
+            case 4:
+                memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"4/8\"", 13);
+                buff_index += 13;
+                break;
+            default:
+                memcpy((void *)(buff_up + buff_index), (void *)",\"codr\":\"?\"", 13);
+                buff_index += 11;
+            }
+
             j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"lsnr\":%li", SNR);
             buff_index += j;
             j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"rssi\":%d,\"size\":%u", readRegister(0x1A)-rssicorr, receivedbytes);
